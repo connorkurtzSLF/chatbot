@@ -1,0 +1,627 @@
+<html>
+<head>
+  <title>SunLifeBot</title>
+  <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+  <script src="http://ajax.googleapis.com/ajax/libs/jquery/2.1.1/jquery.min.js"></script>
+  <script type="text/javascript">
+    var accessToken = "3d6fe2205d994436a1c65c3b0fc39278",
+      baseUrl = "https://api.api.ai/v1/",
+      $speechInput,
+      $recBtn,
+      recognition,
+      messageRecording = "Recording...",
+      messageCouldntHear = "I couldn't hear you, could you say that again?",
+      messageInternalError = "Oh no, there has been an internal server error",
+      messageSorry = "I'm sorry, I don't have the answer to that yet.";
+	  messageLocation = "Here is your closest advisor:";
+	var inQuiz = false;
+	var quizQuestion, answerTotal;
+	var quizQuestionsAnswers = [['Which statement best describes your comfort level with fluctuations in the value of your investments?','I’d be very upset if my investments dropped in value over any period of time.','I’m willing to accept a lower, more predictable rate of return as long as fluctuations in the value of my investments are small.','I’m willing to accept some fluctuations in the value of my investments as I’m seeking a higher rate of return.','I want the highest rate of return possible, and understand the value of my investments can fluctuate significantly.'],['How long will you leave this money invested before you’ll need a significant portion of it for your stated objective?','Less than 5 years','5-10 years','11-20 years','More than 20 years'],['How likely is it that you’ll need access to a large portion of this money earlier than expected? (E.g. taking early retirement, which is defined by pension legislation and can vary by province).','Very likely','Somewhat likely','Somewhat likely','I won’t need access to any of the money in this plan early.'],['Which of the following pattern of returns would you be most comfortable with? Assume an initial amount of $5,000 invested for 10 years.','Your investment grows without losses to $8,100. However, in one of the years the value of your portfolio does not increase.','Your investment grows to $10,100 in year 10, but slightly declines in value in two of the years.','Your investment grows to $12,400, but significantly declines in value in three of the years and was worth only $3,500 after the first year.','']];
+	var activeChatLog = [];
+    $(document).ready(function() {
+	  $('.chatlog').hide();	
+	  $('.mapview').hide();	
+      $speechInput = $("#speech");
+      $recBtn = $("#rec");
+      $volBtn = $("#vol");
+      $mapBtn = $("#mapbtn");
+      $speechInput.keypress(function(event) { 
+        if (event.which == 13) {
+          event.preventDefault();
+          send();
+        }
+      });
+      $recBtn.on("click", function(event) {
+        switchRecognition();
+      });
+      $volBtn.on("click", function(event) {
+        switchVolume();
+      });
+      $mapBtn.on("click", function(event) {
+		$('.mapview').hide();	
+		$('.chatview').show();	
+	    $('.chatlog').scrollTop($('.chatlog')[0].scrollHeight);
+      });
+    });
+    function startRecognition() {
+      recognition = new webkitSpeechRecognition();
+      recognition.onstart = function(event) {
+		$('#recimg').attr('src','reccross.png');
+      };
+      recognition.onresult = function(event) {
+        var text = "";
+          for (var i = event.resultIndex; i < event.results.length; ++i) {
+            text += event.results[i][0].transcript;
+          }
+		  text = text.charAt(0).toUpperCase() + text.slice(1);
+          setInput(text);
+        stopRecognition();
+      };
+      recognition.onend = function() {
+        stopRecognition();
+      };
+      recognition.lang = "en-US";
+      recognition.start();
+    }
+  
+    function stopRecognition() {
+      if (recognition) {
+        recognition.stop();
+        recognition = null;
+		$('#recimg').attr('src','rec.png');
+      }
+    }
+    function switchRecognition() {
+      if (recognition) {
+        stopRecognition();
+      } else {
+        startRecognition();
+      }
+    }
+    function setInput(text) {
+      $speechInput.val(text);
+      send();
+    }
+    function switchVolume() {
+		if($('#volimg').prop('src').includes("vol.png"))
+		{
+			$('#volimg').attr('src','volcross.png');
+		}
+		else
+		{
+			$('#volimg').attr('src','vol.png');
+		}
+    }
+    function send() {
+      var text = $speechInput.val();
+	  $('.chattable').append('<tr><td class="leftlog">'+text+'</td><td></td></tr>');
+	  $('.chatlog').show();
+	  $('.chatlog').scrollTop($('.chatlog')[0].scrollHeight);
+		activeChatLog.push([text,"0"]);
+	  if(text.toLowerCase().includes("advisor near me"))
+		{
+			$("#mapimg").show();
+			$("#hidemap").show();
+		}
+	  if(inQuiz)
+	  {
+		quizAnswer(text);
+	  }
+	  else
+	  {
+		  $.ajax({
+			type: "POST",
+			url: baseUrl + "query?v=20150910",
+			contentType: "application/json; charset=utf-8",
+			dataType: "json",
+			headers: {
+			  "Authorization": "Bearer " + accessToken
+			},
+			data: JSON.stringify({q: text, lang: "en", sessionId: "somerandomthing"}),
+			success: function(data) {
+			  prepareResponse(data);
+			},
+			error: function() {
+			  respond(messageInternalError);
+			}
+		  });
+	  }
+    }
+    function prepareResponse(val) {
+      var debugJSON = JSON.stringify(val, undefined, 2),
+        spokenResponse = val.result.speech;
+      respond(debugJSON);
+      debugRespond(debugJSON);
+    }
+    function debugRespond(val) {
+      $("#response").text(val);
+    }
+    function respond(val) {
+	val = (JSON.parse(val).result.fulfillment.speech);
+      if (val == "") {
+        val = messageSorry;
+      }
+      if (val != messageRecording) {
+        var msg = new SpeechSynthesisUtterance();
+        msg.voiceURI = "native";
+        msg.text = val;
+        msg.lang = "en-US";
+		if(val.includes("http"))
+		{
+			var start = val.indexOf("http");
+			var end = val.length;
+			var link = val.substring(start,end);
+			msg.text = val.substring(0,start) + "this link for more information.";
+			val = val.substring(0,start) + "this <a href=\"" + link + "\">link</a> for more information.";
+		}
+		if(val.includes("3 closest advisors to your location"))
+		{
+			$('.chatview').hide();	
+			$('.mapview').show();
+			navigator.geolocation.getCurrentPosition(initMap, handle_error);
+		}
+		if(val.includes("Alright then. Let's get started!"))
+		{
+			inQuiz = true;
+			quizQuestion = 0;
+			answerTotal = 0;
+			quizAnswer("Start");
+		}
+		else
+		{
+			$('.chattable').append('<tr><td></td><td class="rightlog">'+val+'</td></tr>');
+			$('.chatlog').scrollTop($('.chatlog')[0].scrollHeight);
+			$('#speech').val('');
+			$('.chatlog').show();	
+			activeChatLog.push([val,"1"]);
+			if($('#volimg').prop('src').includes("vol.png"))
+			{
+				window.speechSynthesis.speak(msg);
+			}
+		}
+		if(val.toLowerCase().includes("if you'd like you can contact the customer care centre at"))
+		{
+			sendEmail();
+		}
+      }
+    }
+	
+	
+	
+	function initMap(position) {
+		var latitude = position.coords.latitude;
+        var longitude = position.coords.longitude;
+        var map = new google.maps.Map(document.getElementById('map'), {
+          zoom: 13,
+          center: {lat: latitude, lng: longitude}
+        });
+
+        // Add some markers to the map.
+        // Note: The code uses the JavaScript Array.prototype.map() method to
+        // create an array of markers based on a given "locations" array.
+        // The map() method here has nothing to do with the Google Maps API.
+		var locations2 = locations;
+		
+		var swapped;
+		do {
+			swapped = false;
+			for (var c=0; c < locations2.length-1; c++) {
+				var distance1 = checkDistance(locations2[c],position);
+				var distance2 = checkDistance(locations2[c+1],position);
+				if (distance1 > distance2) {
+					var temp = locations2[c];
+					locations2[c] = locations2[c+1];
+					locations2[c+1] = temp;
+					swapped = true;
+				}
+			}
+		} while (swapped);
+		var locations3 = [locations2[0],locations2[1],locations2[2]];
+	    var legendtext ="1. "+locations3[0].name+"<br>Address: "+locations3[0].address+"<br>Phone: "+locations3[0].phone+"<br><a href=\""+locations3[0].link+"\">Link</a>"
+		+"<br><br>2. "+locations3[1].name+"<br>Address: "+locations3[1].address+"<br>Phone: "+locations3[1].phone+"<br><a href=\""+locations3[1].link+"\">Link</a>"
+		+"<br><br>3. "+locations3[2].name+"<br>Address: "+locations3[2].address+"<br>Phone: "+locations3[2].phone+"<br><a href=\""+locations3[2].link+"\">Link</a>"
+		$('#maplegend').html(legendtext);
+		$('.chattable').append('<tr><td></td><td class="rightlog">Here\'s their info:<br>'+legendtext+'</td></tr>');
+		
+        var markers = locations3.map(function(location, i) {
+          return new google.maps.Marker({
+            position: location,
+            label: i+1+""
+          });
+        });
+
+        // Add a marker clusterer to manage the markers.
+        var markerCluster = new MarkerClusterer(map, markers,
+            {imagePath: 'https://developers.google.com/maps/documentation/javascript/examples/markerclusterer/m'});
+      }
+		function checkDistance(a,b)
+		{
+			var lat1 = a.lat;
+			var lng1 = a.lng;
+			var lat2 = b.coords.latitude;
+			var lng2 = b.coords.longitude;
+			var radlat1 = Math.PI * lat1/180;
+			var radlat2 = Math.PI * lat2/180;
+			var radlng1 = Math.PI * lng1/180;
+			var radlng2 = Math.PI * lng2/180;
+			var theta = lng1-lng2;
+			var radtheta = Math.PI * theta/180;
+			var dist = Math.sin(radlat1) * Math.sin(radlat2) + Math.cos(radlat1) * Math.cos(radlat2) * Math.cos(radtheta);
+			dist = Math.acos(dist);
+			dist = dist * 180/Math.PI;
+			dist = dist * 60 * 1.1515;
+			dist = dist * 1.609344; 
+			return dist;
+		}
+      var locations = [
+        {name:'Barbarann Clements', lat : 43.456571, lng : -80.516973, address:'60 Union Boulevard Kitchener, Ontario N2G 2J9', financialcentre:'Victor Grieco and Associates Financial Solutions Inc.', link:'https://www.sunlife.ca/E/search/agent/?AID=106403727063384623940',phone:'519-741-5585'},
+		{name:'Michelle Rogers', lat : 43.469879, lng : -80.515248, address:'94 Bridgeport Rd. E., Waterloo, Ontario N2J 2J9', financialcentre:'Waterloo Wellington financial centre', link:'https://www.sunlife.ca/E/search/agent/?AID=106402730063392617953',phone:'519-885-4000 ext. 2283'},
+		{name:'Josephine Wong', lat : 43.778457, lng : -79.284587, address:'2075 Kennedy Rd Scarborough, Ontario M1T 3V3', financialcentre:'Scarborough financial centre', link:'https://www.sunlife.ca/E/search/agent/default.asp?AID=106407727065383620955',phone:'416-412-0401 ext. 2222'},
+		{name:'Peter McCarten', lat : 43.450063, lng : -80.487840, address:'22 Frederick Street, Suite 400, Kitchener, Ontario N2H 6M6', financialcentre:'Kitchener financial centre', link:'https://www.sunlife.ca/E/search/agent/default.asp?AID=106402735067392628958',phone:'519-772-5195'}
+                      ];
+	  
+	  
+	  
+	function get_location() {
+
+        if (geo_position_js.init()) {
+            geo_position_js.getCurrentPosition(show_map, handle_error);
+        }
+
+    }
+	
+	function quizAnswer(val){
+		var wrongAnswer = false;
+		var leaveLoop= false;
+		var question;
+		if(val=='a' || val=='A')
+		{
+			answerTotal += 1;
+		}
+		else if(val=='b' || val=='B')
+		{
+			answerTotal += 10;			
+		}
+		else if(val=='c' || val=='C')
+		{
+			answerTotal += 20;
+		}
+		else if(val=='d' || val=='D')
+		{
+			if(quizQuestionsAnswers[quizQuestion][4]=='')
+			{
+				wrongAnswer = true;
+			}
+			else
+			{
+				answerTotal += 30;	
+			}
+		}
+		else if(val=='Exit' || val=='exit')
+		{
+			inQuiz=false;
+			leaveLoop=true;
+		}
+		else
+		{
+			wrongAnswer = true;
+		}
+		if(!wrongAnswer)
+		{
+			quizQuestion++;
+		}
+		if(quizQuestion >= quizQuestionsAnswers.length)
+		{
+			inQuiz=false;
+			var riskDescription;
+			var expectedRate;
+			if(answerTotal < 18)
+			{
+				riskDescription = 'Conservative';
+				expectedRate = 0.04;
+			}
+			else if(answerTotal < 43)
+			{
+				riskDescription = 'Moderate';
+				expectedRate = 0.0525;
+			}
+			else if(answerTotal < 73)
+			{
+				riskDescription = 'Balanced';
+				expectedRate = 0.06;
+			}
+			else if(answerTotal <= 95)
+			{
+				riskDescription = 'Growth';
+				expectedRate = 0.065;
+			}
+			else
+			{
+				riskDescription = 'Aggressive';
+				expectedRate = 0.07;
+			}
+			respond('Risk Description: ' + riskDescription + '<br>Expected Rate of Return: '+expectedRate);
+		}
+		else
+		{
+			question = "Question " + (quizQuestion+1) + "<br><br>" + quizQuestionsAnswers[quizQuestion][0] + '<br><br>A) ' + quizQuestionsAnswers[quizQuestion][1] + '<br>B) ' + quizQuestionsAnswers[quizQuestion][2] + '<br>C) ' + quizQuestionsAnswers[quizQuestion][3];
+			if(quizQuestionsAnswers[quizQuestion][4]!='')
+			{
+				question = question +  '<br>D) ' + quizQuestionsAnswers[quizQuestion][4];
+			}
+			if(wrongAnswer)
+			{
+				if(val == 'Start')
+				{
+					question = "Ok great! We'll get started.<br><br>" + question;
+				}
+				else
+				{
+					question = val + " is not a correct answer.<br><br>" + question;
+				}
+			}
+			if(leaveLoop)
+			{
+				question="You have now left the quiz.";
+			}
+			respond(question);
+		}
+	}
+	
+	function sendEmail()
+	{
+		var currentDate = new Date();
+		var date = currentDate.getDate();
+		var month = currentDate.getMonth();
+		var year = currentDate.getYear();
+		var hours = currentDate.getHours();
+		var minutes = currentDate.getMinutes();
+		var ampm = 'AM';
+		if(date < 10)
+		{
+			date = '0' + date;
+		}
+		if(month < 10)
+		{
+			month = '0' + month;
+		}
+		if(minutes < 10)
+		{
+			minutes = '0' + minutes;
+		}
+		if(hours > 12)
+		{
+			hours -= 12;
+			ampm = 'PM';
+		}
+		if(hours == 12)
+		{
+			ampm = 'PM';
+		}
+		if(hours == 0)
+		{
+			hours = 12;
+		}
+		year = year - 100 + 2000;
+		var sentLog = 'Full chatlog from conversation with Soleil on ' + date + "/" + month + "/" + year + ' at ' + hours + ':' + minutes + ampm + '<br>';
+		for (var c=0; c < activeChatLog.length-1; c++) {
+			if(activeChatLog[c][1] == '0')
+			{
+				sentLog += "You: " + activeChatLog[c][0] + "<br>";
+			}
+			else
+			{
+				sentLog += "Soleil: " + activeChatLog[c][0] + "<br>";
+			}
+		}
+		sentLog = replaceAll(sentLog,' ','%20');
+		sentLog = replaceAll(sentLog,'?','%3F');
+		sentLog = replaceAll(sentLog,'<br>','%0D');
+		console.log(sentLog);
+		window.location.href='mailto:CallCenter@SunLife.ca?subject=Conversation%20History&body='+sentLog+'%0D(Email sent at this point)';
+	}
+	function replaceAll(string,fromVar,toVar)
+	{
+		var newString = string;
+		do{
+			newString = string;
+			string = string.replace(fromVar,toVar);
+		}while(string!=newString);
+		return string;
+	}
+	
+    function handle_error(err) {
+        alert(err.code);
+        if (err.code == 1) {
+            // user said no!
+        }
+    }
+	
+	
+	
+	
+	
+	
+	
+  </script>
+  <style type="text/css">
+    html {
+      box-sizing: border-box;
+	  overflow: hidden;
+    }
+    *, *:before, *:after {
+      box-sizing: inherit;
+    }
+    body {
+      background-color: #e6eced;
+      font-family: "Titillium Web", Arial, sans-serif;
+      font-size: 20px;
+      margin: 0;
+	  height: 100%;
+	  min-height:100%;
+    }
+	.header {
+		background-color: #eeab00;
+		background: linear-gradient(to right, #F7DE99, #eeab00);
+		padding: 1.5em;	
+		height: 17%;
+	}
+	.header p {
+		padding-left: 5em;
+		display: inline;
+		line-height: 70px;
+		font-weight:bold;
+	}
+	.chatlog {
+		background-color: #4D757E;
+		border: 4px solid #eeab00;
+		height: 53%;
+		margin:.5em;
+		overflow-y: scroll;
+		font-size: 24px;
+	}
+	.chattable {
+	  margin: auto;
+	  font-size: 18px;
+	  font-weight:bold;
+	}
+	.leftlog {
+		background-color: #eeab00;
+		text-align: left;
+		width: 50%;
+		padding-right:10px;
+		padding-left:10px;
+		padding-top:5px;
+		padding-bottom:5px;
+	}
+	.rightlog {
+		background-color: #809DA3;
+		text-align: right;
+		width: 50%;
+		padding-right:10px;
+		padding-left:10px;
+		padding-top:5px;
+		padding-bottom:5px;
+	}
+	.speecharea {
+	  margin: auto;
+	  margin-top: 1.5em;
+	  margin-bottom: 1.5em;
+	  width: 80%;
+	}
+    .spoken-response {
+      max-height: 0;
+      overflow: hidden;
+    }
+    .spoken-response.is-active {
+      max-height: 30%;
+      height: 30%;
+    }
+    .spoken-response__text {
+      background-color: #809DA3;
+      color: black;
+      padding: 1em;
+    }
+	container {
+		width: 100%;
+		
+	}
+    input {
+      background-color: white;
+      border: 1px solid #1a4e59;
+      color: black;
+      font-family: "Titillium Web";
+      font-size: 30px;
+	  padding: 0.6em;
+      width: 100%;
+	  margin-bottom: 0.5em;
+      -webkit-transition: all 0.35s ease-in;
+    }
+    textarea {
+      background-color: red;
+      border: 1px solid yellow;
+      color: orange;
+      padding: 0.5em;
+      width: 100%;
+      -webkit-transition: all 0.35s ease-in;
+	  
+    }
+    input:active, input:focus, textarea:active, textarea:focus {
+      outline: 1px solid #1a4e59;
+    }
+    .btn {
+      background-color: #1a4e59;
+      border: 1px solid #33616B;
+	  display:inline;
+	  height:80px;
+	  width:80px;
+    }
+    .btn:hover {
+      background-color: #33616B;
+      color: black;
+    }
+	.buttonimg{
+		height:80%;
+	}
+	.mapview{
+		width: 100%;
+	}
+      #map {
+        height: 100%;
+		width: 100%;
+      }
+      #maplegend {
+        height: 100%;
+		width: 100%;
+		margin-left:0.2em;
+		margin-right:0.2em;
+      }
+	  .maptable {
+		width: 100%;
+		height: 70%;
+	  }
+	  .maptr {
+		width:70%;
+	  }
+	  #mapbtn {
+		background-color: #4D757E;
+      border: 1px solid #99B0B5;		
+	  }
+	  #mapbtn:hover {
+		background-color: #99B0B5;
+		border: 1px solid #E6ECED;		
+	  }
+  </style>
+</head>
+<body>
+	<div class="header">
+		<img src="sun.png" alt="Sun Life Financial" height="100%">
+		<p>You are now talking to Soleil</p>
+	</div>
+	<div class="chatview">
+			<div class="chatlog">
+				<table class="chattable"></table>
+			</div>
+			<div class="container">
+				<div class="speecharea">
+					<input id="speech" type="text"></input><br>
+					<button id="rec" class="btn"><img id="recimg" class="buttonimg" src="rec.png" alt="Record"></button>
+					<button id="vol" class="btn"><img id="volimg" class="buttonimg" src="volcross.png" alt="Volume"></button>
+				</div>
+			</div>
+	</div>
+	<div class="mapview">
+		<button id="mapbtn" class="btn">Hide Map</button><br>
+		<table class ="maptable"><tr>
+		<td class="maptr"><div id="map"></div></td>
+		<td><div id="maplegend"></div></td>
+		</tr></table>
+	</div>
+	<link href="https://fonts.googleapis.com/css?family=Titillium+Web:200" rel="stylesheet" type="text/css">
+</body>
+    <script src="https://developers.google.com/maps/documentation/javascript/examples/markerclusterer/markerclusterer.js">
+    </script>
+    <script async defer
+    src="https://maps.googleapis.com/maps/api/js?key=AIzaSyC0ZCu9QLDLuZjr8Xg3c3B0MKj1thsdY20">
+    </script>
+</html>
